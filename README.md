@@ -112,9 +112,9 @@ Matching is case-insensitive and applies to event titles first, then the "Event 
 | `manager_name` | yes | Your full name |
 | `manager_email` | yes | Your work email (Calendar ID to write shadows to) |
 | `slack_user_id` | no | Slack member ID for DM notifications |
+| `working_hours.timezone` | no | IANA name (e.g. `America/Chicago`, `Europe/London`). Used for out-of-hours filtering and all log/Slack display times. Default: `America/Chicago` |
 | `working_hours.start_hour` | no | Earliest local hour for shadow events (default 9) |
 | `working_hours.end_hour` | no | Latest local hour (default 20) |
-| `working_hours.utc_offset_hours` | no | Your UTC offset (default -5 / CT) |
 | `stages` | yes | List of `{id, label, keywords}` |
 | `default_stage` | no | Stage id to assume when no keywords match; omit to skip |
 | `tracked_clients` | yes | List of `{coach_name, coach_email, client_name, active}` |

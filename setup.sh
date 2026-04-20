@@ -125,9 +125,9 @@ manager_email: $MANAGER_EMAIL
 slack_user_id: $SLACK_USER_ID
 
 working_hours:
+  timezone: America/Chicago  # IANA name; edit to your local TZ (America/New_York, etc.)
   start_hour: 9
   end_hour: 20
-  utc_offset_hours: -5  # CT default; edit for your timezone
 
 # Default stage definitions (health-coaching example). Edit these to match
 # your own lifecycle — see config/template.yaml for the full spec.

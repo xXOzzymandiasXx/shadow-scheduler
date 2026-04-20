@@ -8,10 +8,11 @@ manager_email: you@example.com
 slack_user_id:                   # optional: Slack member ID for DM notifications
 
 # When to schedule shadows. Events outside this window get skipped.
+# All log output and Slack messages render times in this timezone.
 working_hours:
-  start_hour: 9                  # 24h clock, local
+  timezone: America/Chicago      # IANA name — America/New_York, Europe/London, etc.
+  start_hour: 9                  # 24h clock, local to the timezone above
   end_hour: 20
-  utc_offset_hours: -5           # your timezone offset from UTC (CT = -5, ET = -4, PT = -7)
 
 # How the scanner decides what stage a meeting represents. Each stage has an
 # id (used internally), a label (shown on shadow events), and a list of

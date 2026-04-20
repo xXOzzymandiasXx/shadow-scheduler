@@ -19,6 +19,7 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 from google.auth.transport.requests import Request
@@ -256,7 +257,7 @@ def coach_sort_key(entry, shadow_state):
 
 
 def create_shadow_event(service, manager_calendar_id, coach_name, client_name,
-                        stage, stage_label, source_event, dry_run=False,
+                        stage, stage_label, source_event, tz, dry_run=False,
                         slack_user_id=None):
     start = source_event.get("start", {})
     end = source_event.get("end", {})
@@ -288,9 +289,9 @@ def create_shadow_event(service, manager_calendar_id, coach_name, client_name,
 
         start_dt_str = start.get("dateTime", "")
         if start_dt_str:
-            dt = datetime.fromisoformat(start_dt_str)
-            date_str = dt.strftime("%b %d")
-            time_str = dt.strftime("%-I:%M %p")
+            dt_local = datetime.fromisoformat(start_dt_str).astimezone(tz)
+            date_str = dt_local.strftime("%b %d")
+            time_str = dt_local.strftime("%-I:%M %p %Z")
         else:
             date_str = start.get("date", "TBD")
             time_str = ""
@@ -315,9 +316,14 @@ def run(config, state, dry_run=False):
     manager_email = config["manager_email"]
     slack_user_id = config.get("slack_user_id")
     wh = config.get("working_hours", {})
-    min_hour = wh.get("start_hour", wh.get("start_hour_ct", 9))
-    max_hour = wh.get("end_hour", wh.get("end_hour_ct", 20))
-    utc_offset = wh.get("utc_offset_hours", -5)  # default CT
+    min_hour = wh.get("start_hour", 9)
+    max_hour = wh.get("end_hour", 20)
+    tz_name = wh.get("timezone", "America/Chicago")
+    try:
+        tz = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        log.warning(f"Unknown timezone {tz_name!r}; falling back to America/Chicago")
+        tz = ZoneInfo("America/Chicago")
     detect_stage, stage_labels = build_stage_matcher(config)
 
     service = build_calendar_service()
@@ -347,16 +353,13 @@ def run(config, state, dry_run=False):
             stage_label = stage_labels.get(stage, stage.title())
             start_dt_str = event.get("start", {}).get("dateTime")
             if start_dt_str:
-                import calendar as cal
-                start_dt = datetime.fromisoformat(start_dt_str)
-                utc_ts = cal.timegm(start_dt.utctimetuple())
-                local_hour = ((utc_ts // 3600) % 24) + utc_offset
-                if local_hour < 0:
-                    local_hour += 24
-                if local_hour >= 24:
-                    local_hour -= 24
+                start_dt_local = datetime.fromisoformat(start_dt_str).astimezone(tz)
+                local_hour = start_dt_local.hour
                 if not (min_hour <= local_hour <= max_hour):
-                    log.info(f"  Skipping out-of-hours ({local_hour}:00 local)")
+                    log.info(
+                        f"  Skipping out-of-hours "
+                        f"({start_dt_local.strftime('%-I:%M %p %Z')})"
+                    )
                     continue
 
                 conflict_time, conflict_coach = find_shadow_conflict(
@@ -364,8 +367,8 @@ def run(config, state, dry_run=False):
                 )
                 if conflict_time:
                     had_conflicts = True
-                    event_time_str = start_dt.strftime("%-I:%M %p")
-                    conflict_time_str = conflict_time.strftime("%-I:%M %p")
+                    event_time_str = start_dt_local.strftime("%-I:%M %p %Z")
+                    conflict_time_str = conflict_time.astimezone(tz).strftime("%-I:%M %p %Z")
                     log.info(
                         f"  Skipped {coach_name} at {event_time_str} "
                         f"(conflicts with {conflict_coach} shadow at {conflict_time_str})"
@@ -374,7 +377,7 @@ def run(config, state, dry_run=False):
 
             shadow_id = create_shadow_event(
                 service, manager_email, coach_name, client_name, stage, stage_label,
-                event, dry_run, slack_user_id=slack_user_id
+                event, tz, dry_run, slack_user_id=slack_user_id
             )
             if shadow_id:
                 mark_event_shadowed(state, coach_email, event_id, shadow_id, stage, client_name)
