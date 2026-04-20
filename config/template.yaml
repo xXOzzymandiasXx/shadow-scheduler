@@ -1,0 +1,50 @@
+# Shadow Scheduler — Manager Config Template
+# Copy this to config/<your-id>.yaml and fill in your details.
+# Run: python shadow_scanner.py --config config/<your-id>.yaml
+
+manager_id: YOUR_ID              # short slug, e.g. "alex"
+manager_name: Your Full Name
+manager_email: you@example.com
+slack_user_id:                   # optional: Slack member ID for DM notifications
+
+# When to schedule shadows. Events outside this window get skipped.
+working_hours:
+  start_hour: 9                  # 24h clock, local
+  end_hour: 20
+  utc_offset_hours: -5           # your timezone offset from UTC (CT = -5, ET = -4, PT = -7)
+
+# How the scanner decides what stage a meeting represents. Each stage has an
+# id (used internally), a label (shown on shadow events), and a list of
+# case-insensitive keywords matched against event titles + descriptions.
+# Longer keywords win ties, so "provider exam" matches before a stage whose
+# keyword is just "exam".
+stages:
+  - id: intake
+    label: "S1: Intake"
+    keywords: ["intake"]
+  - id: lab_review
+    label: "S2: Lab Review"
+    keywords: ["lab review", "lab"]
+  - id: provider_exam
+    label: "S3: Provider Exam"
+    keywords: ["provider exam", "patient exam"]
+
+# Optional: what stage to assume when no keywords match. Omit to skip
+# unmatched events entirely.
+default_stage: intake
+
+# People to shadow. Each entry says "watch <coach>'s calendar for meetings
+# with <client>, and when you find one, schedule a shadow on my calendar."
+tracked_clients:
+
+  - coach_name: Coach Full Name
+    coach_email: coach@example.com
+    client_name: Client Full Name
+    started_at_stage: intake
+    active: true
+
+  # - coach_name: Another Coach
+  #   coach_email: another@example.com
+  #   client_name: Another Client
+  #   started_at_stage: intake
+  #   active: true

@@ -1,0 +1,24 @@
+# Credentials & tokens (never commit these)
+credentials.json
+token.json
+*.token.json
+
+# State & logs
+state/*.json
+logs/
+*.log
+*.err
+
+# Per-user configs (template.yaml is tracked)
+config/*.yaml
+!config/template.yaml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Mac
+.DS_Store
