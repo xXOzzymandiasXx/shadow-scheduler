@@ -67,9 +67,14 @@ echo ""
 read -p "  Your full name (e.g. Alex Johnson): " MANAGER_NAME
 [ -z "$MANAGER_NAME" ] && fail "Name is required."
 
-DEFAULT_ID=$(echo "$MANAGER_NAME" | awk '{print tolower($1)}')
+DEFAULT_ID=$(echo "$MANAGER_NAME" | awk '{print tolower($1)}' | tr -cd 'a-z0-9_-' | cut -c1-32)
 read -p "  Manager ID [$DEFAULT_ID]: " MANAGER_ID
 MANAGER_ID="${MANAGER_ID:-$DEFAULT_ID}"
+# Restrict to safe chars — this ID gets interpolated into filenames, plist
+# labels, and shell paths. No traversal, no injection.
+if [[ ! "$MANAGER_ID" =~ ^[a-z0-9_-]{1,32}$ ]]; then
+    fail "Manager ID must be 1-32 chars, lowercase letters/digits/hyphens/underscores only."
+fi
 
 read -p "  Your work email (e.g. alex.johnson@company.com): " MANAGER_EMAIL
 [ -z "$MANAGER_EMAIL" ] && fail "Email is required."
@@ -84,7 +89,11 @@ SLACK_BOT_TOKEN=""
 if [ -n "$SLACK_USER_ID" ]; then
     echo ""
     echo "  Paste your Slack bot token (xoxb-...). See README for setup."
-    read -p "  Slack bot token (or blank to skip): " SLACK_BOT_TOKEN
+    echo "  Input will be hidden — paste and press Enter."
+    # -s suppresses echo so the token doesn't land in terminal scrollback,
+    # tmux buffers, script(1), iTerm logs, etc.
+    read -rs -p "  Slack bot token (or blank to skip): " SLACK_BOT_TOKEN
+    echo ""
 fi
 
 # ------------------------------------------------------------------
@@ -150,7 +159,6 @@ tracked_clients:
   # - coach_name: ${COACHES[0]:-Coach Name}
   #   coach_email: ${COACH_EMAILS[0]:-coach@example.com}
   #   client_name: Client Full Name
-  #   started_at_stage: intake
   #   active: true
 YAMLEOF
 
@@ -216,6 +224,9 @@ cat > "$PLIST" << PLISTEOF
 </plist>
 PLISTEOF
 
+# Tighten perms — plist contains the Slack bot token as an env var,
+# so default 0644 is too open.
+chmod 600 "$PLIST"
 launchctl load "$PLIST" 2>/dev/null || true
 echo "  Scanner: installed (runs at 6 AM + 6 PM daily)"
 
@@ -233,7 +244,6 @@ echo ""
 echo "    - coach_name: Coach Full Name"
 echo "      coach_email: coach@example.com"
 echo "      client_name: Client Full Name"
-echo "      started_at_stage: intake"
 echo "      active: true"
 echo ""
 echo -e "  ${BOLD}To test right now (opens browser for Google OAuth on first run):${NC}"

@@ -77,7 +77,6 @@ tracked_clients:
   - coach_name: Jane Smith
     coach_email: jane.smith@company.com
     client_name: Acme Corp — John Doe
-    started_at_stage: intake
     active: true
 ```
 

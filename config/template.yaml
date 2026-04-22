@@ -41,11 +41,9 @@ tracked_clients:
   - coach_name: Coach Full Name
     coach_email: coach@example.com
     client_name: Client Full Name
-    started_at_stage: intake
     active: true
 
   # - coach_name: Another Coach
   #   coach_email: another@example.com
   #   client_name: Another Client
-  #   started_at_stage: intake
   #   active: true

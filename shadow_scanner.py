@@ -38,10 +38,16 @@ log = logging.getLogger(__name__)
 REPO_DIR = Path(__file__).resolve().parent
 CLIENT_SECRETS_PATH = REPO_DIR / "credentials.json"
 TOKEN_PATH = REPO_DIR / "token.json"
-SCOPES = ["https://www.googleapis.com/auth/calendar"]
+# Narrow scope: we only create/read Calendar events, not ACLs or settings.
+SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
 BASIL_COLOR_ID = "10"
 SHADOW_EMOJI = "🔍"
 SHADOW_CONFLICT_MINUTES = 45
+SLACK_TIMEOUT_SEC = 5
+
+# Precompiled regex (module-level to avoid re-compiling per call)
+_SHADOW_COACH_RE = re.compile(r"\+ (.+?) — ")
+_ZOOM_PASSWORD_RE = re.compile(r"Password:\s*(\d+)")
 
 
 # ---------------------------------------------------------------------------
@@ -66,11 +72,11 @@ def _slack_post(text, slack_user_id=None):
         },
     )
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=SLACK_TIMEOUT_SEC) as resp:
             body = json.loads(resp.read())
             if not body.get("ok"):
                 log.warning(f"Slack API error: {body.get('error')}")
-    except urllib.error.URLError as e:
+    except (urllib.error.URLError, TimeoutError) as e:
         log.warning(f"Slack notification failed: {e}")
 
 
@@ -91,8 +97,13 @@ def load_state(state_path):
 
 
 def save_state(state_path, state):
-    with open(state_path, "w") as f:
+    """Atomic write: tmpfile + rename prevents partial writes on crash."""
+    path = Path(state_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w") as f:
         json.dump(state, f, indent=2)
+    os.replace(tmp, path)
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +126,7 @@ def get_credentials():
         flow = InstalledAppFlow.from_client_secrets_file(str(CLIENT_SECRETS_PATH), SCOPES)
         creds = flow.run_local_server(port=0)
     TOKEN_PATH.write_text(creds.to_json())
+    os.chmod(TOKEN_PATH, 0o600)
     return creds
 
 
@@ -229,7 +241,7 @@ def get_scheduled_shadows(service, manager_email, days_ahead=60):
 
 def _extract_coach_from_shadow(summary):
     """Extract coach name from '🔍 Shadow: Client + Coach — Stage'."""
-    match = re.search(r'\+ (.+?) — ', summary)
+    match = _SHADOW_COACH_RE.search(summary)
     return match.group(1) if match else "unknown"
 
 
@@ -263,7 +275,7 @@ def create_shadow_event(service, manager_calendar_id, coach_name, client_name,
     end = source_event.get("end", {})
     zoom_link = source_event.get("location", "")
     description = source_event.get("description", "")
-    pw_match = re.search(r"Password:\s*(\d+)", description)
+    pw_match = _ZOOM_PASSWORD_RE.search(description)
     zoom_pw = pw_match.group(1) if pw_match else ""
     summary = f"{SHADOW_EMOJI} Shadow: {client_name} + {coach_name} — {stage_label}"
     body = {
@@ -312,7 +324,7 @@ def create_shadow_event(service, manager_calendar_id, coach_name, client_name,
 # Main scan loop
 # ---------------------------------------------------------------------------
 
-def run(config, state, dry_run=False):
+def run(config, state, state_path=None, dry_run=False):
     manager_email = config["manager_email"]
     slack_user_id = config.get("slack_user_id")
     wh = config.get("working_hours", {})
@@ -381,6 +393,11 @@ def run(config, state, dry_run=False):
             )
             if shadow_id:
                 mark_event_shadowed(state, coach_email, event_id, shadow_id, stage, client_name)
+                # Persist state after each successful creation so a mid-run
+                # crash (launchd timeout, SIGTERM) can't produce duplicate
+                # shadow events on the next run.
+                if state_path and not dry_run:
+                    save_state(state_path, state)
                 if start_dt_str:
                     scheduled_shadows.append(
                         (datetime.fromisoformat(start_dt_str), coach_name)
@@ -410,8 +427,10 @@ def main():
     state_path = str(REPO_DIR / "state" / f"{manager_id}.json")
     state = load_state(state_path)
     try:
-        run(config, state, dry_run=args.dry_run)
+        run(config, state, state_path=state_path, dry_run=args.dry_run)
     finally:
+        # Belt-and-suspenders: the run loop saves incrementally after each
+        # event; this catches any state mutated outside that path.
         if not args.dry_run:
             save_state(state_path, state)
 
